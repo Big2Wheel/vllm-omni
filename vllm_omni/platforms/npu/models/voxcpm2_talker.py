@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from types import MethodType
+from typing import Any
 
 import torch
 from vllm.logger import init_logger
@@ -14,6 +15,34 @@ from vllm_omni.platforms.npu.graph_tools import NPUExactGraphRunner
 logger = init_logger(__name__)
 
 _MAX_GRAPHS = 8
+_PATCHED = False
+_original_init = None
+
+
+def _patched_init(self, *, vllm_config: Any, prefix: str = "") -> None:
+    assert _original_init is not None
+    _original_init(self, vllm_config=vllm_config, prefix=prefix)
+    setup_voxcpm2_loc_dit_npu_graph(self)
+
+
+def apply_voxcpm2_talker_patch() -> None:
+    """Install the Ascend LocDiT adapter before VoxCPM2 is constructed."""
+    global _PATCHED, _original_init
+    if _PATCHED:
+        return
+
+    # Keep this import deferred until NPUOmniPlatform has finished
+    # initialization. The model module imports ``current_omni_platform`` and
+    # importing it from NPUOmniPlatform.__init__ would recursively initialize
+    # the platform singleton.
+    from vllm_omni.model_executor.models.voxcpm2.voxcpm2_talker import (
+        VoxCPM2TalkerForConditionalGeneration,
+    )
+
+    _original_init = VoxCPM2TalkerForConditionalGeneration.__init__
+    VoxCPM2TalkerForConditionalGeneration.__init__ = _patched_init  # type: ignore[method-assign]
+    _PATCHED = True
+    logger.debug("Applied NPU patch for VoxCPM2 LocDiT")
 
 
 def setup_voxcpm2_loc_dit_npu_graph(model: object) -> None:

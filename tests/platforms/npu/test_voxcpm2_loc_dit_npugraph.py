@@ -2,12 +2,13 @@
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 """Unit tests for the Ascend VoxCPM2 LocDiT NPUGraph adapter."""
 
+import sys
+
 from types import SimpleNamespace
 
 import pytest
 import torch
 
-from vllm_omni.platforms.npu import models as npu_models
 from vllm_omni.platforms.npu.models import voxcpm2_talker as npu_adapter
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu]
@@ -19,7 +20,9 @@ class FakeEstimator(torch.nn.Module):
 
 
 class FakeTalker:
-    def __init__(self) -> None:
+    def __init__(self, *, vllm_config=None, prefix="") -> None:
+        self.vllm_config = vllm_config
+        self.prefix = prefix
         self.estimator = FakeEstimator()
         self.tts = SimpleNamespace(feat_decoder=SimpleNamespace(estimator=self.estimator))
 
@@ -48,18 +51,42 @@ class FakeGraphRunner:
         return compute(*inputs)
 
 
-def test_post_load_dispatches_by_model_arch(monkeypatch) -> None:
-    model = FakeTalker()
+def test_model_patch_wraps_init_and_is_idempotent(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(npu_adapter, "setup_voxcpm2_loc_dit_npu_graph", calls.append)
+    monkeypatch.setattr(npu_adapter, "_PATCHED", False)
+    monkeypatch.setattr(npu_adapter, "_original_init", None)
 
-    npu_models.apply_post_load_model_patches(model, SimpleNamespace(model_arch="OtherModel"))
-    npu_models.apply_post_load_model_patches(
-        model,
-        SimpleNamespace(model_arch="VoxCPM2TalkerForConditionalGeneration"),
+    original_init = FakeTalker.__init__
+    fake_module = SimpleNamespace(VoxCPM2TalkerForConditionalGeneration=FakeTalker)
+    monkeypatch.setitem(
+        sys.modules,
+        "vllm_omni.model_executor.models.voxcpm2.voxcpm2_talker",
+        fake_module,
     )
 
+    try:
+        npu_adapter.apply_voxcpm2_talker_patch()
+        npu_adapter.apply_voxcpm2_talker_patch()
+        model = FakeTalker(vllm_config="config", prefix="talker")
+    finally:
+        FakeTalker.__init__ = original_init
+
     assert calls == [model]
+    assert model.vllm_config == "config"
+    assert model.prefix == "talker"
+
+
+def test_npu_ar_worker_registration_applies_model_patch(monkeypatch) -> None:
+    from vllm_omni.platforms.npu.platform import NPUOmniPlatform
+
+    calls = []
+    monkeypatch.setattr(npu_adapter, "apply_voxcpm2_talker_patch", lambda: calls.append(True))
+
+    worker_cls = NPUOmniPlatform.get_omni_ar_worker_cls()
+
+    assert worker_cls == "vllm_omni.platforms.npu.worker.npu_ar_worker.NPUARWorker"
+    assert calls == [True]
 
 
 def test_loc_dit_npugraph_supports_wrapped_subclass_and_wraps_once(monkeypatch) -> None:
