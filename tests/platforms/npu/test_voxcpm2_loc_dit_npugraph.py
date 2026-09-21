@@ -76,7 +76,18 @@ def test_model_patch_wraps_init_and_is_idempotent(monkeypatch) -> None:
     assert model.prefix == "talker"
 
 
-def test_npu_ar_worker_registration_is_worker_local(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("architectures", "expected_events"),
+    [
+        (["VoxCPM2TalkerForConditionalGeneration"], ["patch", "init_device"]),
+        (["Qwen3ForCausalLM"], ["init_device"]),
+    ],
+)
+def test_npu_ar_worker_registration_is_model_scoped(
+    monkeypatch,
+    architectures,
+    expected_events,
+) -> None:
     from vllm_omni.platforms.npu.platform import NPUOmniPlatform
     from vllm_omni.platforms.npu.worker.npu_ar_worker import NPUARWorker
 
@@ -94,10 +105,11 @@ def test_npu_ar_worker_registration_is_worker_local(monkeypatch) -> None:
 
     worker_cls = NPUOmniPlatform.get_omni_ar_worker_cls()
     worker = object.__new__(npu_adapter.VoxCPM2PatchedNPUARWorker)
+    worker.vllm_config = SimpleNamespace(model_config=SimpleNamespace(architectures=architectures))
     worker.init_device()
 
     assert worker_cls == ("vllm_omni.platforms.npu.models.voxcpm2_talker.VoxCPM2PatchedNPUARWorker")
-    assert events == ["patch", "init_device"]
+    assert events == expected_events
 
 
 def test_loc_dit_npugraph_supports_wrapped_subclass_and_wraps_once(monkeypatch) -> None:

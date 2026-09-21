@@ -15,6 +15,7 @@ from vllm_omni.platforms.npu.worker.npu_ar_worker import NPUARWorker
 logger = init_logger(__name__)
 
 _MAX_GRAPHS = 8
+_VOXCPM2_ARCHITECTURE = "VoxCPM2TalkerForConditionalGeneration"
 _PATCHED = False
 _original_init = None
 
@@ -23,7 +24,10 @@ class VoxCPM2PatchedNPUARWorker(NPUARWorker):
     """Install the model patch inside the engine worker process."""
 
     def init_device(self) -> None:
-        apply_voxcpm2_talker_patch()
+        model_config = getattr(self.vllm_config, "model_config", None)
+        architectures = getattr(model_config, "architectures", None) or ()
+        if _VOXCPM2_ARCHITECTURE in architectures:
+            apply_voxcpm2_talker_patch()
         super().init_device()
 
 
