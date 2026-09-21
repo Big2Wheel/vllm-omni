@@ -10,7 +10,7 @@ from typing import Any
 import torch
 from vllm.logger import init_logger
 
-from vllm_omni.platforms.npu.graph_tools import NPUExactGraphRunner
+from vllm_omni.platforms.npu.worker.npu_ar_worker import NPUARWorker
 
 logger = init_logger(__name__)
 
@@ -19,10 +19,27 @@ _PATCHED = False
 _original_init = None
 
 
+class VoxCPM2PatchedNPUARWorker(NPUARWorker):
+    """Install the model patch inside the engine worker process."""
+
+    def init_device(self) -> None:
+        apply_voxcpm2_talker_patch()
+        super().init_device()
+
+
 def _patched_init(self, *, vllm_config: Any, prefix: str = "") -> None:
     assert _original_init is not None
     _original_init(self, vllm_config=vllm_config, prefix=prefix)
     setup_voxcpm2_loc_dit_npu_graph(self)
+
+
+def _get_npu_exact_graph_runner_cls():
+    # Import graph tooling only in the engine worker. Importing it in vLLM's
+    # short-lived model-inspection subprocess initializes the NPU runtime and
+    # can make that subprocess abort during teardown.
+    from vllm_omni.platforms.npu.graph_tools import NPUExactGraphRunner
+
+    return NPUExactGraphRunner
 
 
 def apply_voxcpm2_talker_patch() -> None:
@@ -57,7 +74,7 @@ def setup_voxcpm2_loc_dit_npu_graph(model: object) -> None:
     if getattr(estimator, "_voxcpm2_npu_graph_runner", None) is not None:
         return
 
-    graph_runner = NPUExactGraphRunner(
+    graph_runner = _get_npu_exact_graph_runner_cls()(
         max_graphs=_MAX_GRAPHS,
         component_name="VoxCPM2 LocDiT",
         disable_config_hint="disable the VoxCPM2 NPU model patch",

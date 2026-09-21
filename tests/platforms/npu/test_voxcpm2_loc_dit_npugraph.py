@@ -3,7 +3,6 @@
 """Unit tests for the Ascend VoxCPM2 LocDiT NPUGraph adapter."""
 
 import sys
-
 from types import SimpleNamespace
 
 import pytest
@@ -77,22 +76,38 @@ def test_model_patch_wraps_init_and_is_idempotent(monkeypatch) -> None:
     assert model.prefix == "talker"
 
 
-def test_npu_ar_worker_registration_applies_model_patch(monkeypatch) -> None:
+def test_npu_ar_worker_registration_is_worker_local(monkeypatch) -> None:
     from vllm_omni.platforms.npu.platform import NPUOmniPlatform
+    from vllm_omni.platforms.npu.worker.npu_ar_worker import NPUARWorker
 
-    calls = []
-    monkeypatch.setattr(npu_adapter, "apply_voxcpm2_talker_patch", lambda: calls.append(True))
+    events = []
+    monkeypatch.setattr(
+        npu_adapter,
+        "apply_voxcpm2_talker_patch",
+        lambda: events.append("patch"),
+    )
+    monkeypatch.setattr(
+        NPUARWorker,
+        "init_device",
+        lambda self: events.append("init_device"),
+    )
 
     worker_cls = NPUOmniPlatform.get_omni_ar_worker_cls()
+    worker = object.__new__(npu_adapter.VoxCPM2PatchedNPUARWorker)
+    worker.init_device()
 
-    assert worker_cls == "vllm_omni.platforms.npu.worker.npu_ar_worker.NPUARWorker"
-    assert calls == [True]
+    assert worker_cls == ("vllm_omni.platforms.npu.models.voxcpm2_talker.VoxCPM2PatchedNPUARWorker")
+    assert events == ["patch", "init_device"]
 
 
 def test_loc_dit_npugraph_supports_wrapped_subclass_and_wraps_once(monkeypatch) -> None:
     FakeGraphRunner.instances.clear()
     FakeGraphRunner.supported = True
-    monkeypatch.setattr(npu_adapter, "NPUExactGraphRunner", FakeGraphRunner)
+    monkeypatch.setattr(
+        npu_adapter,
+        "_get_npu_exact_graph_runner_cls",
+        lambda: FakeGraphRunner,
+    )
     model = FakeTalkerSubclass()
     wrapped_model = SimpleNamespace(module=model)
 
@@ -112,7 +127,11 @@ def test_loc_dit_npugraph_supports_wrapped_subclass_and_wraps_once(monkeypatch) 
 def test_loc_dit_npugraph_falls_back_when_apis_are_unavailable(monkeypatch) -> None:
     FakeGraphRunner.instances.clear()
     FakeGraphRunner.supported = False
-    monkeypatch.setattr(npu_adapter, "NPUExactGraphRunner", FakeGraphRunner)
+    monkeypatch.setattr(
+        npu_adapter,
+        "_get_npu_exact_graph_runner_cls",
+        lambda: FakeGraphRunner,
+    )
     model = FakeTalker()
 
     npu_adapter.setup_voxcpm2_loc_dit_npu_graph(model)

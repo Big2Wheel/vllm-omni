@@ -91,16 +91,9 @@ class NPUOmniPlatform(OmniPlatform, NPUPlatform):
 
     @classmethod
     def get_omni_ar_worker_cls(cls) -> str:
-        # Importing the VoxCPM2 model while this platform's constructor is
-        # running would recursively resolve ``current_omni_platform``. Apply
-        # the model patch here instead: the platform singleton is fully
-        # initialized, while model loading has not started yet.
-        from vllm_omni.platforms.npu.models.voxcpm2_talker import (
-            apply_voxcpm2_talker_patch,
-        )
-
-        apply_voxcpm2_talker_patch()
-        return "vllm_omni.platforms.npu.worker.npu_ar_worker.NPUARWorker"
+        # Use a worker-local hook so model inspection remains free of NPU
+        # graph initialization and the common NPU model runner stays generic.
+        return "vllm_omni.platforms.npu.models.voxcpm2_talker.VoxCPM2PatchedNPUARWorker"
 
     @classmethod
     def get_omni_generation_worker_cls(cls) -> str:
