@@ -10,25 +10,11 @@ from typing import Any
 import torch
 from vllm.logger import init_logger
 
-from vllm_omni.platforms.npu.worker.npu_ar_worker import NPUARWorker
-
 logger = init_logger(__name__)
 
 _MAX_GRAPHS = 8
-_VOXCPM2_ARCHITECTURE = "VoxCPM2TalkerForConditionalGeneration"
 _PATCHED = False
 _original_init = None
-
-
-class VoxCPM2PatchedNPUARWorker(NPUARWorker):
-    """Install the model patch inside the engine worker process."""
-
-    def init_device(self) -> None:
-        model_config = getattr(self.vllm_config, "model_config", None)
-        architectures = getattr(model_config, "architectures", None) or ()
-        if _VOXCPM2_ARCHITECTURE in architectures:
-            apply_voxcpm2_talker_patch()
-        super().init_device()
 
 
 def _patched_init(self, *, vllm_config: Any, prefix: str = "") -> None:
@@ -52,10 +38,8 @@ def apply_voxcpm2_talker_patch() -> None:
     if _PATCHED:
         return
 
-    # Keep this import deferred until NPUOmniPlatform has finished
-    # initialization. The model module imports ``current_omni_platform`` and
-    # importing it from NPUOmniPlatform.__init__ would recursively initialize
-    # the platform singleton.
+    # The model defers resolving ``current_omni_platform`` until construction,
+    # so importing it while NPUOmniPlatform is initialized is cycle-free.
     from vllm_omni.model_executor.models.voxcpm2.voxcpm2_talker import (
         VoxCPM2TalkerForConditionalGeneration,
     )

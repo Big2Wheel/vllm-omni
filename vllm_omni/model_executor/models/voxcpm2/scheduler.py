@@ -6,7 +6,6 @@ from __future__ import annotations
 from vllm.v1.request import RequestStatus
 
 from vllm_omni.core.sched.omni_ar_scheduler import OmniARAsyncScheduler
-from vllm_omni.platforms import current_omni_platform
 
 from .runtime_config import _VoxCPM2RuntimeConfig
 
@@ -22,6 +21,8 @@ class VoxCPM2OmniARAsyncScheduler(OmniARAsyncScheduler):
     """
 
     def _unified_decode_graph_enabled(self) -> bool:
+        from vllm_omni.platforms import current_omni_platform
+
         runtime_config = _VoxCPM2RuntimeConfig.from_vllm_config(self.vllm_config)
         return runtime_config.unified_decode_graph_available(use_cuda_graph=current_omni_platform.is_cuda())
 

@@ -76,40 +76,42 @@ def test_model_patch_wraps_init_and_is_idempotent(monkeypatch) -> None:
     assert model.prefix == "talker"
 
 
-@pytest.mark.parametrize(
-    ("architectures", "expected_events"),
-    [
-        (["VoxCPM2TalkerForConditionalGeneration"], ["patch", "init_device"]),
-        (["Qwen3ForCausalLM"], ["init_device"]),
-    ],
-)
-def test_npu_ar_worker_registration_is_model_scoped(
-    monkeypatch,
-    architectures,
-    expected_events,
-) -> None:
-    from vllm_omni.platforms.npu.platform import NPUOmniPlatform
-    from vllm_omni.platforms.npu.worker.npu_ar_worker import NPUARWorker
+def test_npu_platform_registers_patch_and_keeps_worker_cls(monkeypatch) -> None:
+    from vllm_ascend import utils as ascend_utils
 
-    events = []
+    from vllm_omni.platforms.npu import _310p
+    from vllm_omni.platforms.npu.models import (
+        minicpmo_4_5_code2wav,
+        qwen3_tts,
+        qwen3_tts_tokenizer_v2,
+    )
+    from vllm_omni.platforms.npu.platform import NPUOmniPlatform
+
+    calls = []
+    monkeypatch.setattr(ascend_utils, "adapt_patch", lambda **kwargs: None)
+    monkeypatch.setattr(_310p, "apply_patches", lambda: None)
+    monkeypatch.setattr(
+        minicpmo_4_5_code2wav,
+        "apply_minicpmo_4_5_code2wav_patch",
+        lambda: None,
+    )
+    monkeypatch.setattr(qwen3_tts, "apply_qwen3_tts_patches", lambda: None)
+    monkeypatch.setattr(
+        qwen3_tts_tokenizer_v2,
+        "apply_qwen3_tts_tokenizer_v2_patch",
+        lambda: None,
+    )
     monkeypatch.setattr(
         npu_adapter,
         "apply_voxcpm2_talker_patch",
-        lambda: events.append("patch"),
-    )
-    monkeypatch.setattr(
-        NPUARWorker,
-        "init_device",
-        lambda self: events.append("init_device"),
+        lambda: calls.append("voxcpm2"),
     )
 
+    NPUOmniPlatform()
     worker_cls = NPUOmniPlatform.get_omni_ar_worker_cls()
-    worker = object.__new__(npu_adapter.VoxCPM2PatchedNPUARWorker)
-    worker.vllm_config = SimpleNamespace(model_config=SimpleNamespace(architectures=architectures))
-    worker.init_device()
 
-    assert worker_cls == ("vllm_omni.platforms.npu.models.voxcpm2_talker.VoxCPM2PatchedNPUARWorker")
-    assert events == expected_events
+    assert worker_cls == "vllm_omni.platforms.npu.worker.npu_ar_worker.NPUARWorker"
+    assert calls == ["voxcpm2"]
 
 
 def test_loc_dit_npugraph_supports_wrapped_subclass_and_wraps_once(monkeypatch) -> None:
