@@ -55,6 +55,12 @@ def _make_bare_talker():
     talker._cfm_buffers = None
     talker._last_audio_output_req_ids = []
     talker._batched_fsq_fusion_max_batch = 32
+    if torch.cuda.is_available():
+        talker._device_type = "cuda"
+    elif hasattr(torch, "npu") and torch.npu.is_available():
+        talker._device_type = "npu"
+    else:
+        talker._device_type = "cpu"
     # Added in VoxCPM2TalkerForConditionalGeneration.__init__; set to
     # default (False) to avoid AttributeError when test exercises forward
     # path that checks this flag.

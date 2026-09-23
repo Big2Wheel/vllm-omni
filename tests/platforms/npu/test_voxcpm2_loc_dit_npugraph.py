@@ -77,6 +77,10 @@ def test_model_patch_wraps_init_and_is_idempotent(monkeypatch) -> None:
 
 
 def test_npu_platform_registers_patch_and_keeps_worker_cls(monkeypatch) -> None:
+    pytest.importorskip(
+        "vllm_ascend",
+        reason="NPU platform registration requires the optional vllm-ascend plugin",
+    )
     from vllm_ascend import utils as ascend_utils
 
     from vllm_omni.platforms.npu import _310p
